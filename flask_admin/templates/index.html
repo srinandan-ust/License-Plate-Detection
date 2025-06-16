@@ -1,12 +1,29 @@
-<!-- flask_admin/templates/index.html -->
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-    <title>LPR Logs</title>
-    <style> /* Add some basic styling */ </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LPR Admin Panel</title>
+    <style>
+        body { font-family: sans-serif; margin: 2em; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .controls { margin-bottom: 1em; }
+        .controls button { padding: 10px; font-size: 16px; margin-right: 10px; }
+        #status { font-style: italic; color: #555; }
+    </style>
 </head>
 <body>
-    <h1>License Plate Detections</h1>
+    <h1>License Plate Admin Panel</h1>
+
+    <div class="controls">
+        <button onclick="controlDetection('start')">▶️ Start Detection</button>
+        <button onclick="controlDetection('stop')">⏹️ Stop Detection</button>
+        <button onclick="fetchLogs()">🔄 Refresh Logs</button>
+        <p id="status">Status: Awaiting command.</p>
+    </div>
+
     <table>
         <thead>
             <tr>
@@ -17,17 +34,64 @@
                 <th>Snapshot</th>
             </tr>
         </thead>
-        <tbody>
-            {% for log in logs %}
-            <tr>
-                <td>{{ log['id'] }}</td>
-                <td>{{ log['timestamp'] }}</td>
-                <td>{{ log['plate_text'] }}</td>
-                <td>{{ "%.2f"|format(log['confidence']) }}</td>
-                <td><a href="#">View</a></td> <!-- Link to image later -->
-            </tr>
-            {% endfor %}
+        <tbody id="log-table-body">
+            <!-- Log rows will be inserted here by JavaScript -->
         </tbody>
     </table>
+
+    <script>
+        function fetchLogs() {
+            fetch('/api/logs')
+                .then(response => response.json())
+                .then(data => {
+                    const tbody = document.getElementById('log-table-body');
+                    tbody.innerHTML = ''; // Clear existing logs
+                    data.forEach(log => {
+                        const row = `
+                            <tr>
+                                <td>${log.id}</td>
+                                <td>${log.timestamp}</td>
+                                <td>${log.plate_text}</td>
+                                <td>${(log.confidence * 100).toFixed(2)}%</td>
+                                <td><a href="/snapshots/${log.image_path.split('/').pop()}" target="_blank">View Image</a></td>
+                            </tr>
+                        `;
+                        tbody.innerHTML += row;
+                    });
+                })
+                .catch(error => {
+                    console.error('Error fetching logs:', error);
+                    const tbody = document.getElementById('log-table-body');
+                    tbody.innerHTML = '<tr><td colspan="5">Error loading logs.</td></tr>';
+                });
+        }
+
+        function controlDetection(action) {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = `Sending ${action} command...`;
+            fetch('/api/control', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ action: action }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    statusEl.textContent = `Status: ${data.message}`;
+                } else {
+                    statusEl.textContent = `Error: ${data.message}`;
+                }
+            })
+            .catch(error => {
+                console.error('Error sending control command:', error);
+                statusEl.textContent = 'Error: Could not connect to server.';
+            });
+        }
+
+        // Fetch logs on initial page load
+        document.addEventListener('DOMContentLoaded', fetchLogs);
+    </script>
 </body>
 </html>
