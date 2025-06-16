@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
+        h1 { color: #333; text-align: center; }
+        table { width: 80%; margin: 20px auto; border-collapse: collapse; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        th, td { padding: 12px; border: 1px solid #ddd; text-align: left; }
+        th { background-color: #007bff; color: white; }
+        tr:nth-child(even) { background-color: #f2f2f2; }
+        tr:hover { background-color: #e9e9e9; }
+        button {
+            display: block;
+            margin: 20px auto;
+            padding: 10px 20px;
+            font-size: 16px;
+            color: white;
+            background-color: #28a745;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover { background-color: #218838; }
+        #status { text-align: center; margin-bottom: 20px; font-style: italic; }
+    </style>
+</head>
+<body>
+    <h1>Detected License Plates</h1>
+    <div id="status">Loading data...</div>
+    <button onclick="fetchPlates()">Refresh Data</button>
+    <table id="platesTable">
+        <thead>
+            <tr>
+                <th>Plate Text</th>
+                <th>Timestamp</th>
+                <th>Confidence</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- Data will be inserted here by JavaScript -->
+        </tbody>
+    </table>
+
+    <script>
+        async function fetchPlates() {
+            const statusDiv = document.getElementById('status');
+            const tableBody = document.getElementById('platesTable').getElementsByTagName('tbody')[0];
+            statusDiv.textContent = 'Fetching data...';
+            tableBody.innerHTML = ''; // Clear existing data
+
+            try {
+                const response = await fetch('/api/plates');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const plates = await response.json();
+
+                if (plates.length === 0) {
+                    statusDiv.textContent = 'No plates detected yet.';
+                    const row = tableBody.insertRow();
+                    const cell = row.insertCell();
+                    cell.colSpan = 3;
+                    cell.textContent = 'No data available.';
+                    cell.style.textAlign = 'center';
+                } else {
+                    plates.forEach(plate => {
+                        const row = tableBody.insertRow();
+                        row.insertCell().textContent = plate.plate_text;
+                        row.insertCell().textContent = plate.timestamp;
+                        row.insertCell().textContent = plate.confidence !== null ? plate.confidence.toFixed(2) : 'N/A';
+                    });
+                    statusDiv.textContent = `Displaying ${plates.length} entries. Last refreshed: ${new Date().toLocaleTimeString()}`;
+                }
+            } catch (error) {
+                console.error('Error fetching plates:', error);
+                statusDiv.textContent = `Error loading data: ${error.message}`;
+                const row = tableBody.insertRow();
+                const cell = row.insertCell();
+                cell.colSpan = 3;
+                cell.textContent = 'Failed to load data.';
+                cell.style.textAlign = 'center';
+            }
+        }
+
+        // Fetch data when the page loads
+        document.addEventListener('DOMContentLoaded', fetchPlates);
+    </script>
+</body>
+</html>
