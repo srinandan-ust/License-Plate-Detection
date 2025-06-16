@@ -14,12 +14,11 @@ from camera_utils import Camera
 from ocr_utils import get_plate_from_image
 from db_utils import init_db, add_plate_log
 from log_utils import setup_logging
-from flask_server import FlaskServer
 
 # --- Constants ---
 GUI_UPDATE_MS = 50 # How often to update the GUI in milliseconds
 
-# --- LPR GUI Class (The Tkinter Dashboard) ---
+# --- LPR GUI Class ---
 class LPR_GUI:
     """A Tkinter-based GUI for the License Plate Recognition System."""
     def __init__(self, root, on_close_callback):
@@ -67,7 +66,7 @@ class LPR_GUI:
         self.status_text.set(f"Status: {text}")
 
 # --- Detection Worker Thread ---
-def detection_worker(camera, data_queue, stop_event, control_event, logger):
+def detection_worker(camera, data_queue, stop_event, logger):
     """
     The core detection logic that runs in a background thread.
     It grabs frames, performs OCR, and puts results into a queue.
@@ -78,41 +77,39 @@ def detection_worker(camera, data_queue, stop_event, control_event, logger):
 
     while not stop_event.is_set():
         try:
-            # Pause mechanism: this will block if the event is cleared (paused via web UI)
-            control_event.wait() 
-
             ret, frame = camera.get_frame()
             if not ret:
                 logger.warning("Failed to grab frame.")
                 time.sleep(1)
                 continue
 
+            # --- Perform Detection and Logging ---
             plate, confidence = get_plate_from_image(frame)
             if plate and (time.time() - last_detection_time > DETECTION_COOLDOWN):
                 last_detection_time = time.time()
                 logger.info(f"DETECTED: Plate={plate}, Confidence={confidence:.2f}")
 
-                # Save a snapshot with a unique filename
+                # Save a snapshot
                 timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-                image_filename = f"snapshot_{plate}_{timestamp_str}.jpg"
-                image_path = f"logs/{image_filename}"
+                image_path = f"logs/snapshot_{plate}_{timestamp_str}.jpg"
                 cv2.imwrite(image_path, frame)
-                
-                # Log the relative path to the database
+
+                # Log to database
                 add_plate_log(plate, confidence, image_path)
 
                 # Prepare data for the GUI
                 detection_data = {"plate": plate, "confidence": confidence * 100}
             else:
                 detection_data = None
-            
-            # Put data into the queue for the GUI (always send the frame for the live feed)
+
+            # --- Put data into the queue for the GUI ---
+            # We always send the frame, and optionally the detection data
             data_queue.put({"frame": frame, "detection": detection_data})
 
             time.sleep(0.05) # Small sleep to prevent 100% CPU usage
 
         except Exception as e:
-            logger.error(f"Error in detection worker: {e}", exc_info=True)
+            logger.error(f"Error in detection worker: {e}")
             time.sleep(2)
 
     logger.info("Detection worker thread stopped.")
@@ -124,87 +121,64 @@ class MainApplication:
         self.logger = setup_logging()
         init_db()
 
-        # --- Setup threading and events ---
+        # --- Setup threading and queue ---
         self.data_queue = queue.Queue()
-        self.stop_event = threading.Event() # For full application shutdown
-        self.detection_control_event = threading.Event() # For pausing/resuming detection
-        self.detection_control_event.set() # Start in the "running" state by default
+        self.stop_event = threading.Event()
 
         # --- Initialize Components ---
-        # 1. The Tkinter GUI
         self.gui = LPR_GUI(root, self.on_close)
-        
-        # 2. The Camera
         self.camera = Camera()
         self.gui.set_status("Camera initialized.")
-        
-        # 3. The Flask Web Server
-        self.flask_server = FlaskServer()
-        self.flask_server.start(self.detection_control_event, self.logger)
 
-        # --- Start the Detection Worker Thread ---
+        # --- Start the detection thread ---
         self.detection_thread = threading.Thread(
             target=detection_worker,
-            args=(self.camera, self.data_queue, self.stop_event, self.detection_control_event, self.logger)
+            args=(self.camera, self.data_queue, self.stop_event, self.logger)
         )
         self.detection_thread.start()
-        self.gui.set_status("Detection and Web Server running.")
+        self.gui.set_status("Detection thread running.")
 
         # --- Start the GUI update loop ---
         self.root.after(GUI_UPDATE_MS, self.update_gui)
 
     def update_gui(self):
         """Periodically checks the queue for new data and updates the GUI."""
-        # Update GUI status based on the control event from the web UI
-        if not self.detection_control_event.is_set() and "Paused" not in self.gui.status_text.get():
-             self.gui.set_status("Detection Paused by Web UI")
-        elif self.detection_control_event.is_set() and "Paused" in self.gui.status_text.get():
-             self.gui.set_status("Detection Resumed by Web UI")
-
         try:
-            # Get the latest data from the worker thread's queue
+            # Get the latest data from the queue
             data = self.data_queue.get_nowait()
-            
-            # Update video feed in the GUI
+
+            # Update video feed
             if data.get("frame") is not None:
                 self.gui.update_video_feed(data["frame"])
 
-            # Update detection logs in the GUI if a new plate was found
+            # Update detection logs if a new plate was found
             detection = data.get("detection")
             if detection:
                 self.gui.add_log_entry(detection["plate"], detection["confidence"])
-                # Only update status with plate info if not paused
-                if self.detection_control_event.is_set():
-                    self.gui.set_status(f"Last Plate: {detection['plate']}")
-                    
+                self.gui.set_status(f"Last Plate: {detection['plate']}")
+
         except queue.Empty:
-            pass # No new data, this is normal
+            pass # No new data, just continue
         except Exception as e:
             self.logger.error(f"Error in GUI update loop: {e}")
 
-        # Schedule the next GUI update
+        # Schedule the next update
         if not self.stop_event.is_set():
             self.root.after(GUI_UPDATE_MS, self.update_gui)
 
     def on_close(self):
-        """Gracefully shuts down all parts of the application."""
-        self.logger.info("Shutdown initiated by user from Tkinter window.")
+        """Gracefully shuts down the application."""
+        self.logger.info("Shutdown initiated by user.")
         self.gui.set_status("Shutting down...")
 
-        # The Flask server runs in a daemon thread, so it will stop automatically
-        # when the main program exits. No explicit stop is needed.
-
-        # Signal the main stop event for all threads
+        # Signal the worker thread to stop
         self.stop_event.set()
-        
-        # Unblock the detection worker if it's paused so it can see the stop_event
-        self.detection_control_event.set() 
-        
-        # Wait for the detection thread to finish its current loop and exit
+
+        # Wait for the thread to finish
         self.detection_thread.join()
         self.logger.info("Detection thread joined.")
 
-        # Release hardware resources
+        # Release resources
         self.camera.release()
         self.logger.info("Camera released.")
 
@@ -214,4 +188,4 @@ class MainApplication:
 if __name__ == "__main__":
     root = tk.Tk()
     app = MainApplication(root)
-    root.mainloop() # This starts the entire application by running the Tkinter event loop
+    root.mainloop()
