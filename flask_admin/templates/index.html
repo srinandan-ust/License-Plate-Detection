@@ -1,0 +1,33 @@
+<!-- flask_admin/templates/index.html -->
+<!doctype html>
+<html>
+<head>
+    <title>LPR Logs</title>
+    <style> /* Add some basic styling */ </style>
+</head>
+<body>
+    <h1>License Plate Detections</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Timestamp</th>
+                <th>Plate</th>
+                <th>Confidence</th>
+                <th>Snapshot</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for log in logs %}
+            <tr>
+                <td>{{ log['id'] }}</td>
+                <td>{{ log['timestamp'] }}</td>
+                <td>{{ log['plate_text'] }}</td>
+                <td>{{ "%.2f"|format(log['confidence']) }}</td>
+                <td><a href="#">View</a></td> <!-- Link to image later -->
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>
