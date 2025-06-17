@@ -152,5 +152,4 @@ This project is for educational/research purposes. Modify and use with credit.
 
 ## 🤝 Credits
 
-Developed by **Lucifer**  
-With ❤️ for real-world IoT and CV integration
+Developed by **PiRates**  🏴‍☠️
