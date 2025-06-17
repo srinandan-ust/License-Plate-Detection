@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Logs</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
+        .container { background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.05); max-width: 800px; margin: 20px auto; }
+        h1 { color: #333; text-align: center; }
+        pre { background-color: #eee; padding: 15px; border-radius: 5px; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; }
+        .back-link { display: block; text-align: center; margin-top: 20px; color: #007bff; text-decoration: none; }
+        .back-link:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>System Logs</h1>
+        <pre>
+            {% if logs %}
+                {% for log in logs %}
+                    {{ log }}<br>
+                {% endfor %}
+            {% else %}
+                No logs available.
+            {% endif %}
+        </pre>
+        <a href="{{ url_for('index') }}" class="back-link">Back to Admin Panel</a>
+    </div>
+</body>
+</html>

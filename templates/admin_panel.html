@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - Number Plate Detector</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
+        .header { text-align: center; margin-bottom: 20px; }
+        .controls { text-align: center; margin-bottom: 20px; background-color: white; padding: 15px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.05); }
+        .container { display: flex; flex-direction: row; flex-wrap: wrap; gap: 20px; justify-content: center;}
+        .video-section, .data-section, .menu-section { background-color: white; padding: 15px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.05); }
+        .video-section { flex: 1 1 640px; min-width: 320px; max-width: 640px; }
+        .data-section { flex: 1 1 400px; min-width: 300px; max-width: 600px; }
+        .menu-section { flex: 1 1 200px; min-width: 200px; max-width: 250px; text-align: center; }
+        h1, h2 { color: #333; margin-top: 0; }
+        #videoFeed { border: 1px solid #ddd; width: 100%; height: auto; background-color: #222; display: block; }
+        #platesTable { border-collapse: collapse; width: 100%; margin-top: 10px; }
+        #platesTable th, #platesTable td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        #platesTable th { background-color: #4CAF50; color: white; }
+        #platesTable tr:nth-child(even){background-color: #f9f9f9;}
+        .controls button, .data-section button, .menu-section a {
+            padding: 10px 15px; margin: 5px; cursor: pointer;
+            border: none; border-radius: 4px; font-weight: bold;
+            transition: background-color 0.3s ease;
+            text-decoration: none; display: inline-block;
+        }
+        .start-btn { background-color: #4CAF50; color: white; }
+        .start-btn:hover { background-color: #45a049; }
+        .stop-btn { background-color: #f44336; color: white; }
+        .stop-btn:hover { background-color: #da190b; }
+        .data-section button, .menu-section a { background-color: #007bff; color: white; }
+        .data-section button:hover, .menu-section a:hover { background-color: #0056b3; }
+        #status { margin-top: 10px; font-weight: bold; font-size: 1.1em; }
+        .status-running { color: green; }
+        .status-stopped { color: red; }
+        .logout-btn { background-color: #6c757d; color: white; margin-top: 20px;}
+        .logout-btn:hover { background-color: #5a6268; }
+        .btn-danger { background-color: #dc3545; color: white; }
+        .btn-danger:hover { background-color: #c82333; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Number Plate Detection - Admin Panel</h1>
+    </div>
+
+    <div class="controls">
+        <h2>System Control</h2>
+        <button id="startButton" class="start-btn">Start Detection</button>
+        <button id="stopButton" class="stop-btn">Stop Detection</button>
+        <p id="status">Status: <span id="processingStatusText" class="{{ 'status-running' if processing_status else 'status-stopped' }}">
+            {{ 'Running' if processing_status else 'Stopped' }}
+        </span></p>
+    </div>
+
+    <div class="container">
+        <div class="menu-section">
+            <h2>Navigation</h2>
+            <a href="{{ url_for('view_logs') }}">View Logs</a><br>
+            <a href="{{ url_for('settings') }}">Settings</a><br>
+            <a href="{{ url_for('export_logs') }}">Export Logs (.csv)</a><br>
+            <a href="{{ url_for('logout') }}" class="logout-btn">Logout</a>
+        </div>
+        <div class="video-section">
+            <h2>Live Camera Feed</h2>
+            <img id="videoFeed" src="{{ url_for('video_feed') }}" alt="Live Video Feed (Starting...)">
+        </div>
+        <div class="data-section">
+            <h2>Detected Plates</h2>
+            <button id="refreshPlatesButton">Refresh Plate Data</button>
+            <table id="platesTable">
+                <thead>
+                    <tr>
+                        <th>Plate Number</th>
+                        <th>Timestamp</th>
+                        <th>Confidence</th>
+                    </tr>
+                </thead>
+                <tbody id="platesBody">
+                    </tbody>
+            </table>
+            <button id="clear-data-btn" class="btn-danger" style="margin-top: 15px;">Clear Data (Keep Last 10)</button>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById("clear-data-btn").addEventListener("click", function() {
+            if (confirm("Are you sure you want to delete all but the last 10 entries? This action cannot be undone.")) {
+                fetch('/clear_data', {
+                    method: 'POST',
+                })
+                .then(res => res.json())
+                .then(data => {
+                    alert(data.message);
+                    location.reload(); // Refresh the page to see updated data
+                })
+                .catch(err => alert("Failed to clear data: " + err));
+            }
+        });
+    </script>
+    
+    <script>
+        const platesBody = document.getElementById('platesBody');
+        const processingStatusTextSpan = document.getElementById('processingStatusText');
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        const refreshPlatesButton = document.getElementById('refreshPlatesButton');
+        const videoFeedImg = document.getElementById('videoFeed');
+
+        async function fetchPlates() {
+            try {
+                const response = await fetch('/api/plates');
+                if (!response.ok) {
+                    platesBody.innerHTML = `<tr><td colspan="3">Error loading plates: ${response.status}</td></tr>`;
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const plates = await response.json();
+                platesBody.innerHTML = '';
+                if (plates.length === 0) {
+                    platesBody.innerHTML = '<tr><td colspan="3">No plates detected yet.</td></tr>';
+                } else {
+                    plates.forEach(plate => {
+                        const row = platesBody.insertRow();
+                        row.insertCell().textContent = plate.plate_number;
+                        row.insertCell().textContent = plate.timestamp;
+                        row.insertCell().textContent = plate.confidence;
+                    });
+                }
+            } catch (error) {
+                console.error('Error fetching plates:', error);
+                if (platesBody.innerHTML === '') {
+                    platesBody.innerHTML = '<tr><td colspan="3">Error fetching plates data. Check console.</td></tr>';
+                }
+            }
+        }
+
+        async function fetchProcessingStatusAndUpdateUI() {
+            try {
+                const response = await fetch('/api/control/status');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                processingStatusTextSpan.textContent = data.processing_active ? 'Running' : 'Stopped';
+                processingStatusTextSpan.className = data.processing_active ? 'status-running' : 'status-stopped';
+            } catch (error) {
+                console.error('Error fetching status:', error);
+                processingStatusTextSpan.textContent = 'Error';
+                processingStatusTextSpan.className = '';
+            }
+        }
+
+        async function sendControlCommand(action) {
+            try {
+                const response = await fetch(`/api/control/${action}`, { method: 'POST' });
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                console.log(`${action} command response:`, data);
+                await fetchProcessingStatusAndUpdateUI();
+                if (action === 'start') {
+                    // Force refresh video feed when starting
+                    videoFeedImg.src = "{{ url_for('video_feed') }}?" + new Date().getTime();
+                }
+            } catch (error) {
+                console.error(`Error sending ${action} command:`, error);
+                alert(`Failed to ${action} processing. See console for details.`);
+            }
+        }
+
+        startButton.addEventListener('click', () => sendControlCommand('start'));
+        stopButton.addEventListener('click', () => sendControlCommand('stop'));
+        refreshPlatesButton.addEventListener('click', fetchPlates);
+
+        videoFeedImg.onerror = function() {
+            console.warn("Video feed image error. Stream might be down or an issue occurred.");
+        };
+
+        fetchPlates();
+        setInterval(fetchPlates, 10000); // Refresh plates every 10 seconds
+        setInterval(fetchProcessingStatusAndUpdateUI, 3000); // Refresh status every 3 seconds
+    </script>
+</body>
+</html>

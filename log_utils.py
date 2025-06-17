@@ -1,75 +1,40 @@
-# raspberry_pi_code/log_utils.py
 import logging
-import sqlite3
-from datetime import datetime
+import os
 
-# --- File Logger ---
-def setup_file_logger(log_file_path="app.log", logger_name="AppLogger"):
-    logger = logging.getLogger(logger_name)
-    logger.setLevel(logging.INFO) # Set default logging level
+LOG_FILE_NAME = "app.log" # Or import from config
 
-    # Prevent adding multiple handlers if function is called multiple times
-    if not logger.handlers:
-        # File handler
-        fh = logging.FileHandler(log_file_path)
-        fh.setLevel(logging.INFO)
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        fh.setFormatter(formatter)
-        logger.addHandler(fh)
+def setup_logger(log_file_name=LOG_FILE_NAME, level=logging.INFO):
+    """Sets up the root logger for the application."""
+    # Ensure log directory exists if specified in path
+    log_dir = os.path.dirname(log_file_name)
+    if log_dir and not os.path.exists(log_dir):
+        os.makedirs(log_dir)
 
-        # Console handler (optional, good for debugging)
-        ch = logging.StreamHandler()
-        ch.setLevel(logging.INFO)
-        ch.setFormatter(formatter)
-        logger.addHandler(ch)
+    # Basic configuration for logging
+    logging.basicConfig(
+        level=level,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_file_name), # Log to a file
+            logging.StreamHandler()             # Log to console
+        ]
+    )
+    logger = logging.getLogger(__name__)
+    logger.info(f"Logging configured. Log file: {log_file_name}")
     return logger
 
-# --- SQLite Logger ---
-class LogDBManager:
-    def __init__(self, db_path="event_logs.db"):
-        self.db_path = db_path
-        self._create_log_table_if_not_exists()
-
-    def _get_connection(self):
-        return sqlite3.connect(self.db_path)
-
-    def _create_log_table_if_not_exists(self):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS event_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT NOT NULL,
-                level TEXT NOT NULL,
-                message TEXT NOT NULL
-            )
-        ''')
-        conn.commit()
-        conn.close()
-
-    def log_event(self, level_str, message):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3] # Milliseconds
-        try:
-            cursor.execute('''
-                INSERT INTO event_logs (timestamp, level, message)
-                VALUES (?, ?, ?)
-            ''', (timestamp_str, level_str.upper(), message))
-            conn.commit()
-        except sqlite3.Error as e:
-            print(f"Database error while logging event: {e}")
-        finally:
-            conn.close()
-
 if __name__ == '__main__':
-    # Test file logger
-    file_logger = setup_file_logger("test_app.log")
-    file_logger.info("This is an info message for file log.")
-    file_logger.warning("This is a warning message for file log.")
+    # This demonstrates how other modules will use the logger
+    # In other files, you'd do:
+    # import logging
+    # logger = logging.getLogger(__name__)
+    # logger.info("This is a test message from another module.")
+    
+    app_logger = setup_logger() # Setup once in your main application entry point
+    app_logger.info("Test info message from log_utils.")
+    app_logger.warning("Test warning message.")
+    app_logger.error("Test error message.")
 
-    # Test DB logger
-    log_db_manager = LogDBManager("test_event_logs.db")
-    log_db_manager.log_event("INFO", "System started test event.")
-    log_db_manager.log_event("ERROR", "A test error occurred.")
-    print("Logged events to test_app.log and test_event_logs.db")
+    # Example of how other modules would use it after setup_logger() is called once
+    another_module_logger = logging.getLogger("MyOtherModule")
+    another_module_logger.info("Message from another module.")
