@@ -78,7 +78,7 @@ License-Plate-Detection/
 
 1. **Clone the Repository**
    ```bash
-   git clone https://github.com/your-repo/License-Plate-Detection.git
+   git clone https://github.com/srinandan-ust/License-Plate-Detection.git
    cd License-Plate-Detection
    ```
 
@@ -152,5 +152,4 @@ This project is for educational/research purposes. Modify and use with credit.
 
 ## 🤝 Credits
 
-Developed by **Lucifer**  
-With ❤️ for real-world IoT and CV integration
+Developed by **PiRates**  🏴‍☠️
